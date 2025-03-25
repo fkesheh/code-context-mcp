@@ -1,9 +1,10 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import config from "../config.js";
 
 // Ensure the data directory exists
-const DATA_DIR = process.env.DATA_DIR || "./data";
+const DATA_DIR = config.DATA_DIR;
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }

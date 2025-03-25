@@ -12,14 +12,14 @@ A Model Context Protocol (MCP) server for providing code context from local git 
 - Uses local git repositories instead of GitHub API
 - Stores data in SQLite database
 - Splits code into semantic chunks
-- Generates embeddings for code chunks using HuggingFace transformers
+- Generates embeddings for code chunks using Ollama
 - Provides semantic search over code
 
 ## Prerequisites
 
 - Node.js (v16+)
 - Git
-- HuggingFace transformers (all-MiniLM-L6-v2 model)
+- Ollama with an embedding model
 
 ## Installation
 
@@ -39,11 +39,20 @@ npm run build
 
 Set the following environment variables:
 
-- `HF_MODEL_NAME`: HuggingFace model name (default: 'all-MiniLM-L6-v2')
-- `EMBEDDING_DIMENSIONS`: Dimensions for embeddings (default: 384 for all-MiniLM-L6-v2)
-- `DATA_DIR`: Directory for SQLite database (default: './data')
-- `CACHE_DIR`: Directory for cache files (default: './cache')
-- `REPOS_DIR`: Directory for cloned repositories (default: './repos')
+- `DATA_DIR`: Directory for SQLite database (default: '~/.codeContextMcp/data')
+- `REPO_CACHE_DIR`: Directory for cloned repositories (default: '~/.codeContextMcp/repos')
+
+### Using Ollama
+
+For faster and more powerful embeddings, you can use Ollama:
+
+```bash
+# Install Ollama from https://ollama.ai/
+
+# Pull an embedding model (unclemusclez/jina-embeddings-v2-base-code is recommended)
+ollama pull unclemusclez/jina-embeddings-v2-base-code
+
+```
 
 ## Usage
 
@@ -76,13 +85,17 @@ Clones a repository, processes code, and performs semantic search:
   "branch": "main", // Optional - defaults to repository's default branch
   "query": "Your search query",
   "keywords": ["keyword1", "keyword2"], // Optional - filter results by keywords
-  "limit": 5 // Optional - number of results to return, default: 5
+  "filePatterns": ["**/*.ts", "src/*.js"], // Optional - filter files by glob patterns
+  "excludePatterns": ["**/node_modules/**"], // Optional - exclude files by glob patterns
+  "limit": 10 // Optional - number of results to return, default: 10
 }
 ```
 
 The `branch` parameter is optional. If not provided, the tool will automatically use the repository's default branch.
 
 The `keywords` parameter is optional. If provided, the results will be filtered to only include chunks that contain at least one of the specified keywords (case-insensitive matching).
+
+The `filePatterns` and `excludePatterns` parameters are optional. They allow you to filter which files are processed and searched using glob patterns (e.g., `**/*.ts` for all TypeScript files).
 
 ## Database Schema
 

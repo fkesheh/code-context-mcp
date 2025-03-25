@@ -444,6 +444,31 @@ export function extensionToSplitter(extension: string): string {
     case "iml":
       return "html";
     case "lock":
+    case "jpg":
+    case "jpeg":
+    case "png":
+    case "gif":
+    case "bmp":
+    case "svg":
+    case "ico":
+    case "webp":
+    case "tiff":
+    case "bin":
+    case "exe":
+    case "dll":
+    case "so":
+    case "dylib":
+    case "obj":
+    case "o":
+    case "zip":
+    case "tar":
+    case "gz":
+    case "rar":
+    case "7z":
+    case "jar":
+    case "war":
+    case "ear":
+    case "class":
       return "ignore";
     default:
       return "text";
@@ -458,7 +483,7 @@ export const splitDocument = (filename: string, code: string) => {
     return [];
   }
 
-  const CHUNK_SIZE_TOKENS = 2000;
+  const CHUNK_SIZE_TOKENS = 7000;
   const CHUNK_OVERLAP_TOKENS = 200;
 
   const CHUNK_SIZE_CHARACTERS = CHUNK_SIZE_TOKENS * 3.25;

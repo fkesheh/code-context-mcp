@@ -2,13 +2,9 @@ import { simpleGit } from "simple-git";
 import fs from "fs";
 import path from "path";
 import db from "./db.js";
-import { splitDocument } from "./codeSplitter.js";
-import { generateHuggingFaceEmbeddings, getHuggingFaceEmbeddingDimensions } from "./hfEmbeddings.js";
-
-// Configuration
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
-const EMBEDDING_DIMENSIONS = getHuggingFaceEmbeddingDimensions();
-const BATCH_SIZE = 1000;
+import { extensionToSplitter, splitDocument } from "./codeSplitter.js";
+import config from "../config.js";
+import { generateOllamaEmbeddings } from "./ollamaEmbeddings.js";
 
 /**
  * Clone a git repository if it doesn't exist locally
@@ -296,7 +292,9 @@ export const processFileContents = async (
 
         // Check for null bytes in the content
         if (content.includes("\0")) {
-          console.error(`File ${file.path} contains null bytes. Removing them.`);
+          console.error(
+            `File ${file.path} contains null bytes. Removing them.`
+          );
           content = content.replace(/\0/g, "");
         }
 
@@ -387,10 +385,9 @@ export const generateEmbeddings = async (
   }
 
   // Update branch status to processing
-  db.run(
-    "UPDATE branch SET status = 'processing_embeddings' WHERE id = :id",
-    { id: branch.id }
-  );
+  db.run("UPDATE branch SET status = 'processing_embeddings' WHERE id = :id", {
+    id: branch.id,
+  });
 
   // Get chunks that need embeddings
   const chunks = db.all(
@@ -406,28 +403,41 @@ export const generateEmbeddings = async (
   console.error(`Found ${chunks.length} chunks without embeddings`);
 
   // Process in batches
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < chunks.length; i += config.BATCH_SIZE) {
+    const batchChunks = chunks.slice(i, i + config.BATCH_SIZE);
     const batchTexts = batchChunks.map((chunk) => chunk.content);
 
     try {
       // Generate embeddings with HuggingFace
-      const embeddings = await generateHuggingFaceEmbeddings(batchTexts);
+      const embeddings = await generateOllamaEmbeddings(batchTexts);
 
       // Update chunks with embeddings
       db.transaction((db) => {
         for (let j = 0; j < batchChunks.length; j++) {
           const chunkId = batchChunks[j].id;
           const embedding = JSON.stringify(embeddings[j]);
-          db.run("UPDATE file_chunk SET embedding = :embedding WHERE id = :id", 
-            { id: chunkId, embedding });
+          db.run(
+            `UPDATE file_chunk SET 
+              embedding = :embedding,
+              model_version = :modelVersion,
+              token_count = :tokenCount,
+              updated_at = :updatedAt
+              WHERE id = :id`,
+            {
+              embedding,
+              modelVersion: config.EMBEDDING_MODEL.model,
+              tokenCount: batchTexts[j].length,
+              updatedAt: new Date().toISOString(),
+              id: chunkId,
+            }
+          );
         }
       })();
 
       console.error(
-        `Processed embeddings for batch ${i / BATCH_SIZE + 1}/${
-          Math.ceil(chunks.length / BATCH_SIZE)
-        }`
+        `Processed embeddings for batch ${
+          i / config.BATCH_SIZE + 1
+        }/${Math.ceil(chunks.length / config.BATCH_SIZE)}`
       );
     } catch (error) {
       console.error("Error generating embeddings:", error);
@@ -442,133 +452,124 @@ export const generateEmbeddings = async (
 };
 
 /**
- * Determine the splitter type based on file extension
- * @param extension File extension
- * @returns Splitter type
+ * Get the default branch of a repository
+ * @param owner GitHub repository owner
+ * @param repo GitHub repository name
+ * @returns Default branch name (usually main or master)
  */
-export const extensionToSplitter = (extension: string): string => {
-  if (!extension) {
-    return "text";
+export const getDefaultBranch = async (
+  owner: string,
+  repo: string
+): Promise<string> => {
+  try {
+    // Check if we have this repo locally
+    // Note: Repository is stored with just the repo name, not in owner/repo structure
+    const repoDir = path.join(config.REPO_CACHE_DIR, repo);
+
+    if (fs.existsSync(repoDir)) {
+      console.error(`Found local repo at ${repoDir}, determining default branch`);
+      // If we have the repo locally, use git to determine the default branch
+      const git = simpleGit(repoDir);
+
+      // Fetch the latest info from the remote
+      await git.fetch();
+
+      // Get the symbolic-ref of HEAD
+      const headRef = await git.raw([
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+      ]);
+
+      // Extract the branch name
+      const branchMatch = headRef.trim().match(/refs\/remotes\/origin\/(.+)$/);
+      if (branchMatch && branchMatch[1]) {
+        console.error(`Found default branch: ${branchMatch[1]}`);
+        return branchMatch[1];
+      }
+    } else {
+      console.error(`Repository not found at ${repoDir}`);
+    }
+
+    // Fallback to main as the default branch
+    console.error(`Fallback to 'main' as default branch`);
+    return "main";
+  } catch (error) {
+    console.error("Error getting default branch:", error);
+    // Default to 'main' if there's an error
+    return "main";
   }
-  const extensionLower = extension.toLowerCase();
-  switch (extensionLower) {
-    // C/C++ extensions
-    case "c++":
-    case "cpp":
-    case "c":
-    case "h":
-    case "hpp":
-    case "m":
-    case "mm":
-      return "cpp";
-    // Go
-    case "go":
-      return "go";
-    // Java
-    case "java":
-      return "java";
-    // JavaScript and related
-    case "js":
-    case "ts":
-    case "typescript":
-    case "tsx":
-    case "jsx":
-    case "javascript":
-    case "json":
-    case "pbxproj":
-      return "js";
-    // YAML and related
-    case "yaml":
-    case "yml":
-    case "toml":
-    case "ini":
-    case "cfg":
-    case "conf":
-    case "props":
-    case "env":
-    case "plist":
-    case "gemfile":
-    case "dockerfile":
-    case "podfile":
-    case "patch":
-      return "text";
-    // Shell scripts and related
-    case "sh":
-    case "bash":
-    case "zsh":
-    case "fish":
-    case "bat":
-    case "cmd":
-      return "text";
-    // Properties and XSD
-    case "properties":
-    case "xsd":
-      return "text";
-    // SQL
-    case "sql":
-      return "sql";
-    // PHP
-    case "php":
-      return "php";
-    // Protocol buffers
-    case "proto":
-      return "proto";
-    // Python
-    case "py":
-    case "python":
-      return "python";
-    // reStructuredText
-    case "rst":
-      return "rst";
-    // Ruby
-    case "rb":
-    case "ruby":
-      return "ruby";
-    // Rust
-    case "rs":
-    case "rust":
-      return "rust";
-    // Scala
-    case "scala":
-      return "scala";
-    // Swift
-    case "swift":
-      return "swift";
-    // Markdown
-    case "md":
-    case "markdown":
-      return "markdown";
-    // LaTeX
-    case "tex":
-    case "latex":
-      return "latex";
-    // HTML and related
-    case "html":
-    case "htm":
-    case "xml":
-    case "xsl":
-    case "xdt":
-    case "xcworkspacedata":
-    case "xcprivacy":
-    case "xcsettings":
-    case "xcscheme":
-      return "html";
-    // Solidity
-    case "sol":
-    case "solidity":
-      return "sol";
-    // Text
-    case "text":
-    case "txt":
-    case "lst":
-    case "reg":
-      return "text";
-    // Additional file extensions
-    case "jpr":
-    case "jws":
-    case "iml":
-      return "html";
-    default:
-      return "ignore";
+};
+
+/**
+ * Query a repository using embeddings to find relevant code
+ * @param query Search query text
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param branch Branch name
+ * @param topK Number of results to return
+ * @returns Array of matching code chunks with metadata
+ */
+export const queryRepository = async (
+  query: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  topK: number = 5
+): Promise<any[]> => {
+  // Generate embedding for the query
+  const queryEmbeddingList = await generateOllamaEmbeddings([query]);
+  const queryEmbedding = queryEmbeddingList[0];
+
+  // Get repository metadata from the database
+  const repoResult = db.get("SELECT id FROM repository WHERE name = :repo", {
+    repo,
+  }) as { id: number } | undefined;
+
+  if (!repoResult) {
+    throw new Error(`Repository ${owner}/${repo} not found in database`);
   }
+  const repoId = repoResult.id;
+
+  // Get branch metadata
+  const branchResult = db.get(
+    "SELECT id FROM branch WHERE name = :branch AND repository_id = :repoId",
+    { branch, repoId }
+  ) as { id: number } | undefined;
+
+  if (!branchResult) {
+    throw new Error(
+      `Branch ${branch} not found in repository ${owner}/${repo}`
+    );
+  }
+
+  // Query for similar chunks using vector similarity
+  const chunkResults = db.all(
+    `SELECT 
+      c.id, 
+      c.content, 
+      c.chunk_number,
+      f.path,
+      vector_similarity(c.embedding, :queryEmbedding) as similarity
+    FROM 
+      chunk c
+    JOIN 
+      file f ON c.file_id = f.id
+    JOIN 
+      branch b ON b.repository_id = f.repository_id
+    WHERE 
+      b.id = :branchId AND
+      f.repository_id = :repoId AND
+      c.embedding IS NOT NULL
+    ORDER BY 
+      similarity DESC 
+    LIMIT :topK`,
+    {
+      branchId: branchResult.id,
+      repoId,
+      queryEmbedding,
+      topK,
+    }
+  );
+
+  return chunkResults;
 };

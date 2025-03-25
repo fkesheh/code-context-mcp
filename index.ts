@@ -1,22 +1,120 @@
 #!/usr/bin/env node
-
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createServer } from "./codeContext.js";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError,
+} from "@modelcontextprotocol/sdk/types.js";
+import { QueryRepoSchema, queryRepo, ProgressNotifier } from "./tools/queryRepo.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 
-async function main() {
-  const transport = new StdioServerTransport();
-  const server = createServer();
-
-  await server.connect(transport);
-
-  // Cleanup on exit
-  process.on("SIGINT", async () => {
-    await server.close();
-    process.exit(0);
-  });
+enum ToolName {
+  QUERY_REPO = "query_repo",
 }
 
-main().catch((error) => {
-  console.error("Server error:", error);
-  process.exit(1);
-});
+class CodeContextServer {
+  private server: Server;
+
+  constructor() {
+    this.server = new Server(
+      {
+        name: "code-context-mcp",
+        version: "0.1.0",
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    this.setupToolHandlers();
+
+    // Error handling
+    this.server.onerror = (error) => console.error("[MCP Error]", error);
+    process.on("SIGINT", async () => {
+      await this.server.close();
+      process.exit(0);
+    });
+  }
+
+  private setupToolHandlers() {
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: ToolName.QUERY_REPO,
+          description: "Queries a git repository",
+          inputSchema: zodToJsonSchema(QueryRepoSchema),
+        },
+      ],
+    }));
+
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: input } = request.params;
+      const progressToken = request.params._meta?.progressToken;
+
+      switch (name) {
+        case ToolName.QUERY_REPO:
+          try {
+            // Create a progress notifier if we have a progress token
+            let progressNotifier: ProgressNotifier | undefined;
+            
+            if (progressToken !== undefined) {
+              progressNotifier = {
+                sendProgress: async (progress: number, total: number) => {
+                  await this.server.notification({
+                    method: "notifications/progress",
+                    params: {
+                      progress: Math.floor(progress * 100),
+                      total: total * 100,
+                      progressToken,
+                    },
+                  });
+                },
+              };
+            }
+            
+            // Get the raw result from queryRepo with progress notifications
+            const result = await queryRepo(
+              input as z.infer<typeof QueryRepoSchema>,
+              progressNotifier
+            );
+            
+            // Format the response in Claude's expected structure
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(result),
+                },
+              ],
+            };
+          } catch (error) {
+            console.error("Error in query_repo:", error);
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error executing query: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+            };
+          }
+        default:
+          throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      }
+    });
+  }
+
+  async run() {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+    console.error("Jira MCP server running on stdio");
+  }
+}
+
+const server = new CodeContextServer();
+server.run().catch(console.error);
