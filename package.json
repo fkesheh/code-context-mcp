@@ -1,0 +1,42 @@
+{
+  "name": "@modelcontextprotocol/server-code-context",
+  "version": "0.1.0",
+  "description": "MCP server for code context from local git repositories",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "mcp-server-code-context": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && shx chmod +x dist/*.js",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.4.0",
+    "@langchain/textsplitters": "^0.1.0",
+    "@modelcontextprotocol/sdk": "1.0.1",
+    "better-sqlite3": "^8.5.0",
+    "express": "^4.21.1",
+    "simple-git": "^3.20.0",
+    "sqlite3": "^5.1.6",
+    "tsx": "^4.19.3",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.4",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.10.0",
+    "jest": "^29.7.0",
+    "jest-environment-node-single-context": "^29.4.0",
+    "shx": "^0.3.4",
+    "ts-jest": "^29.3.0",
+    "typescript": "^5.6.2"
+  }
+}
