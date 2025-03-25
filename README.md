@@ -47,10 +47,19 @@ Set the following environment variables:
 
 ## Usage
 
-Start the server:
+### Using with Claude Desktop
 
-```bash
-npm start
+Add the following configuration to your Claude Desktop configuration file (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "code-context-mcp": {
+      "command": "/path/to/your/node",
+      "args": ["/path/to/code-context-mcp/dist/index.js"]
+    }
+  }
+}
 ```
 
 ## Tools
