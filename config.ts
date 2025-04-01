@@ -7,9 +7,11 @@ export const EMBEDDING_MODELS = {
     model: "unclemusclez/jina-embeddings-v2-base-code",
     contextSize: 8192,
     dimensions: 768,
-    baseUrl: "http://localhost:11434",
+    baseUrl: "http://127.0.0.1:11434",
   },
 };
+
+
 
 export const codeContextConfig = {
   ENV: process.env.NODE_ENV || "development",

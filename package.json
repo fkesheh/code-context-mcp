@@ -14,7 +14,7 @@
     "build": "tsc && shx chmod +x dist/*.js",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "inspect": "npm run build && npx @modelcontextprotocol/inspector node dist/index.js"
   },
   "dependencies": {
     "@langchain/textsplitters": "^0.1.0",

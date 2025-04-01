@@ -107,6 +107,13 @@ The server uses SQLite with the following schema:
 - `branch_file_association`: Associates files with branches
 - `file_chunk`: Stores code chunks and their embeddings
 
+
+# Debuggin
+
+curl http://localhost:11434/api/embed -d '{"model":"unclemusclez/jina-embeddings-v2-base-code","input":"Llamas are members of the camelid family"}'
+curl http://127.0.01:11434/api/embed -d '{"model":"unclemusclez/jina-embeddings-v2-base-code","input":"Llamas are members of the camelid family"}'
+curl http://[::1]:11434/api/embed -d '{"model":"unclemusclez/jina-embeddings-v2-base-code","input":"Llamas are members of the camelid family"}'
+
 ## License
 
 MIT

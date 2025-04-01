@@ -12,6 +12,8 @@ if (!fs.existsSync(DATA_DIR)) {
 const DB_PATH = path.join(DATA_DIR, "code_context.db");
 const db = new Database(DB_PATH);
 
+console.error(`Using db at: ${DB_PATH}`)
+
 // Enable foreign keys
 db.pragma("foreign_keys = ON");
 

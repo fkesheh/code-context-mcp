@@ -7,9 +7,10 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { QueryRepoSchema, queryRepo, ProgressNotifier } from "./tools/queryRepo.js";
+import { QueryRepoSchema, queryRepo } from "./tools/queryRepo.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
+import { ProgressNotifier } from "utils/types.js";
 
 enum ToolName {
   QUERY_REPO = "query_repo",
@@ -46,7 +47,7 @@ class CodeContextServer {
       tools: [
         {
           name: ToolName.QUERY_REPO,
-          description: "Queries a git repository",
+          description: "Queries a git repository using semantic and keyword search. Use keywords and file patterns if you want to targer specific files or terms",
           inputSchema: zodToJsonSchema(QueryRepoSchema),
         },
       ],

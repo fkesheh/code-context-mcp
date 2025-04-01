@@ -28,21 +28,19 @@ export async function generateOllamaEmbeddings(
       apiInitialized = true;
     }
 
-    const baseUrl = embeddingModel.baseUrl || "http://localhost:11434";
+    const baseUrl = embeddingModel.baseUrl || "http://127.0.0.1:11434";
     const embeddings: number[][] = [];
 
     // Process texts in parallel with a rate limit
     console.error(`Generating embeddings for ${texts.length} chunks...`);
-    const batchSize = 5; // Process 5 at a time to avoid overwhelming the API
+    const batchSize = 1000; // Process 5 at a time to avoid overwhelming the API
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
-      const promises = batch.map(async (text) => {
-        try {
-          const response = await axios.post(
-            `${baseUrl}/api/embeddings`,
+      const response = await axios.post(
+            `${baseUrl}/api/embed`,
             {
               model: embeddingModel.model,
-              prompt: text,
+              input: batch,
               options: {
                 num_ctx: embeddingModel.contextSize,
               },
@@ -53,18 +51,8 @@ export async function generateOllamaEmbeddings(
               },
             }
           );
-
-          return response.data.embedding;
-        } catch (error) {
-          console.error(`Error in embedding request: ${error}`);
-          // Return mock embedding in case of error
-          return generateMockEmbedding(embeddingModel.dimensions);
-        }
-      });
-
       // Await all promises in this batch
-      const batchResults = await Promise.all(promises);
-      embeddings.push(...batchResults);
+      embeddings.push(...response.data.embeddings);
     }
 
     console.error(`Successfully generated ${embeddings.length} embeddings`);
