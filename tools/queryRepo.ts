@@ -213,7 +213,7 @@ export async function queryRepo(
              (SELECT  (SELECT SUM(json_extract(value, '$') * json_extract(?, '$[' || key || ']'))
                         FROM json_each(fc.embedding)
                         GROUP BY key IS NOT NULL)
-              ) as similarity
+              )/${queryEmbedding.length} as similarity
       FROM file_chunk fc
       JOIN file f ON fc.file_id = f.id
       JOIN branch_file_association bfa ON f.id = bfa.file_id
