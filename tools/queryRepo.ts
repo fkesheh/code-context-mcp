@@ -13,22 +13,22 @@ export const QueryRepoSchema = z.object({
     .string()
     .optional()
     .describe("Branch name to query (defaults to repository's default branch)"),
-  query: z.string().describe("Query for semantic search"),
-  keywords: z
+  semanticSearch: z.string().describe("Query for semantic search. This search is not exact, it will try to find the most relevant files, it doesn't accept file: or path: prefixes."),
+  keywordsSearch: z
     .array(z.string())
     .describe(
-      "Restric the semantic search to the files that contain at least one of the keywords in this list. Leave empty to disable"
+      "Search to the files that contain at least one of the keywords in this list. Leave empty to disable. This can work in conjunction with the semantic search."
     ),
   filePatterns: z
     .array(z.string())
     .describe(
-      "Array of glob patterns to filter files (e.g. '**/*.ts', 'src/*.js'). Use it for a more effective search. Leave empty to disable"
+      "Array of glob patterns to filter files (e.g. '**/*.ts', 'src/*.js'). Use it for a more effective search or to target specific files for example 'somefile.tsx'. Leave empty to disable"
     ),
   excludePatterns: z
     .array(z.string())
     .optional()
     .describe(
-      "Array of glob patterns to exclude files (e.g. '**/node_modules/**', '**/dist/**')"
+      "Array of glob patterns to exclude files (e.g. '**/node_modules/**', '**/dist/**'). Use it to exclude files that are not relevant to the search. Leave empty to disable"
     ),
   limit: z.number().optional().describe("Maximum number of results to return"),
   _meta: z
@@ -111,21 +111,26 @@ export async function queryRepo(
     const {
       repoUrl,
       branch,
-      query,
+      semanticSearch: semanticSearchInput,
+      keywordsSearch,
       limit,
-      keywords,
       filePatterns,
       excludePatterns,
     } = input;
 
     // Validate required parameters
-    if (!repoUrl || !query) {
+    if (!repoUrl ||(!semanticSearchInput && !keywordsSearch)) {
       console.error(`[queryRepo] Error: Missing required parameters`);
       return {
         error: {
-          message: "Required parameters (repoUrl, query) are missing",
+          message: "Required parameters (repoUrl, semanticSearch or keywordsSearch) are missing",
         },
       };
+    }
+
+    let semanticSearch = semanticSearchInput;
+    if(!semanticSearchInput) {
+      semanticSearch = keywordsSearch.join(" ");
     }
 
     // Initialize progress at start
@@ -175,9 +180,9 @@ export async function queryRepo(
     }
 
     // Generate embedding for the query
-    console.error(`[queryRepo] Generating embedding for query: "${query}"`);
+    console.error(`[queryRepo] Generating embedding for query: "${semanticSearch}"`);
     const queryEmbedStart = Date.now();
-    const [queryEmbedding] = await generateOllamaEmbeddings([query]);
+    const [queryEmbedding] = await generateOllamaEmbeddings([semanticSearch]);
     const queryEmbeddingStr = JSON.stringify(queryEmbedding);
     console.error(
       `[queryRepo] Generated query embedding in ${
@@ -300,14 +305,14 @@ export async function queryRepo(
 
     // Filter results by keywords if provided
     let filteredResults = results;
-    if (keywords && keywords.length > 0) {
+    if (keywordsSearch && keywordsSearch.length > 0) {
       console.error(
-        `[queryRepo] Filtering results by keywords: ${keywords.join(", ")}`
+        `[queryRepo] Filtering results by keywords: ${keywordsSearch.join(", ")}`
       );
       const keywordFilterStart = Date.now();
 
       // Convert keywords to lowercase for case-insensitive matching
-      const lowercaseKeywords = keywords.map((kw) => kw.toLowerCase());
+      const lowercaseKeywords = keywordsSearch.map((kw) => kw.trim().toLowerCase());
 
       filteredResults = results.filter((result: { content: string }) => {
         const content = result.content.toLowerCase();
