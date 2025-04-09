@@ -107,8 +107,35 @@ The server uses SQLite with the following schema:
 - `branch_file_association`: Associates files with branches
 - `file_chunk`: Stores code chunks and their embeddings
 
+# Debugging
 
-# Debuggin
+## MAC Mx Series - ARM Architecture Issues
+
+When installing better-sqlite3 on Mac M-series chips (ARM architecture), if you encounter errors like "mach-o file, but is an incompatible architecture (have 'x86_64', need 'arm64e' or 'arm64')", you need to ensure the binary matches your architecture. Here's how to resolve this issue:
+
+```bash
+# Check your Node.js architecture
+node -p "process.arch"
+
+# If it shows 'arm64', but you're still having issues, try:
+npm rebuild better-sqlite3 --build-from-source
+
+# Or for a clean install:
+npm uninstall better-sqlite3
+export npm_config_arch=arm64
+export npm_config_target_arch=arm64
+npm install better-sqlite3 --build-from-source
+```
+
+If you're using Rosetta, make sure your entire environment is consistent. Your error shows x86_64 binaries being built but your system needs arm64.
+For persistent configuration, add to your .zshrc or .bashrc:
+
+```
+export npm_config_arch=arm64
+export npm_config_target_arch=arm64
+```
+
+## Testing Ollama Embeddings
 
 curl http://localhost:11434/api/embed -d '{"model":"unclemusclez/jina-embeddings-v2-base-code","input":"Llamas are members of the camelid family"}'
 curl http://127.0.01:11434/api/embed -d '{"model":"unclemusclez/jina-embeddings-v2-base-code","input":"Llamas are members of the camelid family"}'
