@@ -1,0 +1,31 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    properties:
+      DATA_DIR:
+        type: string
+        description: Directory for SQLite database. Defaults to '~/.codeContextMcp/data'
+          if not provided.
+      REPO_CACHE_DIR:
+        type: string
+        description: Directory for cloned repositories. Defaults to
+          '~/.codeContextMcp/repos' if not provided.
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({
+      // Running the built artifact from the dist folder using node
+      command: 'node',
+      args: ['dist/index.js'],
+      env: {
+        DATA_DIR: config.DATA_DIR || '~/.codeContextMcp/data',
+        REPO_CACHE_DIR: config.REPO_CACHE_DIR || '~/.codeContextMcp/repos'
+      }
+    })
+  exampleConfig:
+    DATA_DIR: /data/db
+    REPO_CACHE_DIR: /data/repos
