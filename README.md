@@ -1,5 +1,7 @@
 # Code Context MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@fkesheh/code-context-mcp)](https://smithery.ai/server/@fkesheh/code-context-mcp)
+
 A Model Context Protocol (MCP) server for providing code context from local git repositories. This server allows you to:
 
 1. Clone git repositories locally
@@ -23,6 +25,15 @@ A Model Context Protocol (MCP) server for providing code context from local git 
 
 ## Installation
 
+### Installing via Smithery
+
+To install Code Context Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@fkesheh/code-context-mcp):
+
+```bash
+npx -y @smithery/cli install @fkesheh/code-context-mcp --client claude
+```
+
+### Manual Installation
 ```bash
 # Clone the repository
 git clone <repository-url>
