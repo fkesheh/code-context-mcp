@@ -34,8 +34,8 @@ class CodeContextServer {
 
     this.setupToolHandlers();
 
-    // Error handling
-    this.server.onerror = (error) => console.error("[MCP Error]", error);
+    // Error handling - comment out to avoid JSON parsing conflicts
+    // this.server.onerror = (error) => console.error("[MCP Error]", error);
     process.on("SIGINT", async () => {
       await this.server.close();
       process.exit(0);
@@ -47,7 +47,7 @@ class CodeContextServer {
       tools: [
         {
           name: ToolName.QUERY_REPO,
-          description: "Queries a git repository using semantic and keyword search. Use keywords and file patterns if you want to targer specific files or terms",
+          description: "Queries a git repository using semantic and keyword search. Use keywords and file patterns if you want to target specific files or terms",
           inputSchema: zodToJsonSchema(QueryRepoSchema),
         },
       ],
@@ -94,7 +94,7 @@ class CodeContextServer {
               ],
             };
           } catch (error) {
-            console.error("Error in query_repo:", error);
+            // console.error("Error in query_repo:", error);
             return {
               content: [
                 {
@@ -113,9 +113,12 @@ class CodeContextServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error("Code Context MCP server running on stdio");
+    // console.error("Code Context MCP server running on stdio");
   }
 }
 
 const server = new CodeContextServer();
-server.run().catch(console.error);
+server.run().catch((_error) => {
+  // Silent error handling to avoid JSON parsing conflicts
+  process.exit(1);
+});

@@ -17,17 +17,19 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
   }
 });
 
-process.stderr.write(`Starting Code Context MCP Server\n`);
-process.stderr.write(`Data Directory: ${DATA_DIR}\n`);
-process.stderr.write(`Repo Config: ${REPO_CONFIG_DIR}\n`);
-process.stderr.write(`Node Environment: ${NODE_ENV}\n\n`);
+// Log to a file instead of stderr to avoid JSON parsing conflicts
+// Uncomment these lines if you need debug output, but redirect to a log file
+// process.stderr.write(`Starting Code Context MCP Server\n`);
+// process.stderr.write(`Data Directory: ${DATA_DIR}\n`);
+// process.stderr.write(`Repo Config: ${REPO_CONFIG_DIR}\n`);
+// process.stderr.write(`Node Environment: ${NODE_ENV}\n\n`);
 
 const checkOllama = () => {
   try {
     const result = spawn('pgrep', ['ollama'], { stdio: 'pipe' });
     result.on('exit', (code) => {
       if (code !== 0) {
-        process.stderr.write('Starting Ollama...\n');
+        // process.stderr.write('Starting Ollama...\n');
         spawn('ollama', ['serve'], { detached: true, stdio: 'ignore' }).unref();
         setTimeout(() => startMcpServer(), 3000);
       } else {
