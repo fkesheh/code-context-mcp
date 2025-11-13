@@ -73,6 +73,17 @@ CREATE TABLE IF NOT EXISTS file_chunk (
   FOREIGN KEY (file_id) REFERENCES file(id) ON DELETE CASCADE,
   UNIQUE(file_id, chunk_number)
 );
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_branch_repository_id ON branch(repository_id);
+CREATE INDEX IF NOT EXISTS idx_branch_status ON branch(status);
+CREATE INDEX IF NOT EXISTS idx_file_repository_id ON file(repository_id);
+CREATE INDEX IF NOT EXISTS idx_file_status ON file(status);
+CREATE INDEX IF NOT EXISTS idx_file_sha ON file(sha);
+CREATE INDEX IF NOT EXISTS idx_branch_file_branch_id ON branch_file_association(branch_id);
+CREATE INDEX IF NOT EXISTS idx_branch_file_file_id ON branch_file_association(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_chunk_file_id ON file_chunk(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_chunk_embedding ON file_chunk(embedding) WHERE embedding IS NOT NULL;
 `;
 
 // Initialize the database

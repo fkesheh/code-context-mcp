@@ -115,79 +115,138 @@ export const processFileContents = async (
     branch.id
   ) as PendingFile[];
 
-  for (const file of pendingFiles) {
-    console.error(`Processing file: ${file.path}`);
-    const extension = file.path.split(".").pop()?.toLowerCase();
-    const splitType = extension ? extensionToSplitter(extension) : "ignore";
+  // Process files in batches to avoid memory issues
+  const BATCH_SIZE = 10; // Process 10 files at a time
+  let processedFiles = 0;
 
-    if (splitType !== "ignore") {
-      try {
-        // Get file content
-        const filePath = path.join(repoPath, file.path);
+  for (let i = 0; i < pendingFiles.length; i += BATCH_SIZE) {
+    const fileBatch = pendingFiles.slice(i, i + BATCH_SIZE);
+    console.error(
+      `Processing file batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+        pendingFiles.length / BATCH_SIZE
+      )} (${fileBatch.length} files)`
+    );
 
-        // Skip if file doesn't exist (might have been deleted)
-        if (!fs.existsSync(filePath)) {
-          console.error(`File ${file.path} doesn't exist, skipping`);
-          continue;
-        }
+    for (const file of fileBatch) {
+      console.error(`Processing file: ${file.path}`);
+      const extension = file.path.split(".").pop()?.toLowerCase();
+      const splitType = extension ? extensionToSplitter(extension) : "ignore";
 
-        let content = fs.readFileSync(filePath, "utf-8");
-
-        // Check for null bytes in the content
-        if (content.includes("\0")) {
-          console.error(
-            `File ${file.path} contains null bytes. Removing them.`
-          );
-          content = content.replace(/\0/g, "");
-        }
-
-        // Check if the content is valid UTF-8
+      if (splitType !== "ignore") {
         try {
-          new TextDecoder("utf-8", { fatal: true }).decode(
-            new TextEncoder().encode(content)
-          );
-        } catch (e) {
-          console.error(
-            `File ${file.path} contains invalid UTF-8 characters. Replacing them.`
-          );
-          content = content.replace(/[^\x00-\x7F]/g, ""); // Remove non-ASCII characters
-        }
+          // Get file content
+          const filePath = path.join(repoPath, file.path);
 
-        // Truncate content if it's too long
-        const maxLength = 1000000; // Adjust this value based on your database column size
-        if (content.length > maxLength) {
-          console.error(
-            `File ${file.path} content is too long. Truncating to ${maxLength} characters.`
-          );
-          content = content.substring(0, maxLength);
-        }
+          // Skip if file doesn't exist (might have been deleted)
+          if (!fs.existsSync(filePath)) {
+            console.error(`File ${file.path} doesn't exist, skipping`);
+            continue;
+          }
 
-        // Split the document
-        const chunks = await splitDocument(file.path, content);
+          // Check file size before reading
+          const stats = fs.statSync(filePath);
+          const MAX_FILE_SIZE = 5000000; // 5MB
+          if (stats.size > MAX_FILE_SIZE) {
+            console.error(
+              `File ${file.path} is too large (${stats.size} bytes > ${MAX_FILE_SIZE}), skipping`
+            );
+            dbInterface.run("UPDATE file SET status = ? WHERE id = ?", [
+              "done",
+              file.id,
+            ]);
+            continue;
+          }
 
-        // Store chunks in the database using dbInterface.transaction
-        dbInterface.transaction((db) => {
-          for (let i = 0; i < chunks.length; i++) {
-            db.prepare(
+          let content = fs.readFileSync(filePath, "utf-8");
+
+          // Check for null bytes in the content
+          if (content.includes("\0")) {
+            console.error(
+              `File ${file.path} contains null bytes. Removing them.`
+            );
+            content = content.replace(/\0/g, "");
+          }
+
+          // Check if the content is valid UTF-8
+          try {
+            new TextDecoder("utf-8", { fatal: true }).decode(
+              new TextEncoder().encode(content)
+            );
+          } catch (e) {
+            console.error(
+              `File ${file.path} contains invalid UTF-8 characters. Replacing them.`
+            );
+            content = content.replace(/[^\x00-\x7F]/g, ""); // Remove non-ASCII characters
+          }
+
+          // Truncate content if it's too long
+          const maxLength = 1000000; // Adjust this value based on your database column size
+          if (content.length > maxLength) {
+            console.error(
+              `File ${file.path} content is too long. Truncating to ${maxLength} characters.`
+            );
+            content = content.substring(0, maxLength);
+          }
+
+          // Split the document
+          const chunks = await splitDocument(file.path, content);
+
+          // Limit the number of chunks per file
+          const MAX_CHUNKS = 100;
+          if (chunks.length > MAX_CHUNKS) {
+            console.error(
+              `File ${file.path} has too many chunks (${chunks.length}), limiting to ${MAX_CHUNKS}`
+            );
+            chunks.splice(MAX_CHUNKS);
+          }
+
+          // Store chunks in the database using dbInterface.transaction
+          dbInterface.transaction((db) => {
+            const insertStmt = db.prepare(
               `INSERT INTO file_chunk (file_id, content, chunk_number)
                VALUES (?, ?, ?)
                ON CONFLICT(file_id, chunk_number) DO NOTHING`
-            ).run(file.id, chunks[i].pageContent, i + 1);
-          }
+            );
 
-          // Update file status to 'fetched'
-          db.prepare("UPDATE file SET status = ? WHERE id = ?").run(
-            "fetched",
-            file.id
-          );
-        });
-      } catch (error) {
-        console.error(`Error processing file ${file.path}:`, error);
+            for (let i = 0; i < chunks.length; i++) {
+              insertStmt.run(file.id, chunks[i].pageContent, i + 1);
+            }
+
+            // Update file status to 'fetched'
+            db.prepare("UPDATE file SET status = ? WHERE id = ?").run(
+              "fetched",
+              file.id
+            );
+          });
+
+          processedFiles++;
+        } catch (error) {
+          console.error(`Error processing file ${file.path}:`, error);
+
+          // Mark file as done even if it failed to prevent reprocessing
+          try {
+            dbInterface.run("UPDATE file SET status = ? WHERE id = ?", [
+              "done",
+              file.id,
+            ]);
+          } catch (dbError) {
+            console.error(
+              `Error updating file status for ${file.path}:`,
+              dbError
+            );
+          }
+        }
+      } else {
+        // Update file status to 'done' for ignored files
+        dbInterface.run("UPDATE file SET status = ? WHERE id = ?", [
+          "done",
+          file.id,
+        ]);
       }
-    } else {
-      // Update file status to 'done' for ignored files
-      dbInterface.run("UPDATE file SET status = ? WHERE id = ?", ["done", file.id]);
     }
+
+    // Log progress
+    console.error(`Processed ${processedFiles}/${pendingFiles.length} files`);
   }
 };
 
@@ -364,14 +423,16 @@ export async function processFiles(
       } files (${Date.now() - startTime}ms)`
     );
 
-    // Limit the number of files processed to avoid timeouts
-    // This might need adjustment based on actual performance
-    const MAX_FILES_TO_PROCESS = 1000000;
+    // Limit the number of files processed to avoid timeouts and memory issues
+    const MAX_FILES_TO_PROCESS = 5000; // Reduced from 1000000 to reasonable limit
     const limitedFiles = filesToProcess.slice(0, MAX_FILES_TO_PROCESS);
 
     if (limitedFiles.length < filesToProcess.length) {
       console.error(
-        `[processFiles] WARNING: Processing only ${limitedFiles.length} of ${filesToProcess.length} files to avoid timeout`
+        `[processFiles] WARNING: Processing only ${limitedFiles.length} of ${filesToProcess.length} files to avoid timeout and memory issues`
+      );
+      console.error(
+        `[processFiles] Remaining ${filesToProcess.length - limitedFiles.length} files will be processed on next update`
       );
     }
 

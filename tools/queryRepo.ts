@@ -207,13 +207,15 @@ export async function queryRepo(
       excludePatterns
     );
 
+    // Use a larger initial limit for better results before filtering
+    const initialLimit = Math.max(effectiveLimit * 3, 100);
+
     const results = dbInterface.all(
       `
       SELECT fc.content, f.path, fc.chunk_number,
-             (SELECT  (SELECT SUM(json_extract(value, '$') * json_extract(?, '$[' || key || ']'))
-                        FROM json_each(fc.embedding)
-                        GROUP BY key IS NOT NULL)
-              )/${queryEmbedding.length} as similarity
+             (SELECT SUM(json_extract(value, '$') * json_extract(?, '$[' || key || ']'))
+              FROM json_each(fc.embedding)
+             ) / ${queryEmbedding.length} as similarity
       FROM file_chunk fc
       JOIN file f ON fc.file_id = f.id
       JOIN branch_file_association bfa ON f.id = bfa.file_id
@@ -223,7 +225,7 @@ export async function queryRepo(
       ORDER BY similarity DESC
       LIMIT ?
     `,
-      [queryEmbeddingStr, branchData.branchId, effectiveLimit]
+      [queryEmbeddingStr, branchData.branchId, initialLimit]
     );
     console.error(
       `[queryRepo] Search completed in ${Date.now() - searchStart}ms, found ${
@@ -280,10 +282,9 @@ export async function queryRepo(
         const retryResults = dbInterface.all(
           `
           SELECT fc.content, f.path, fc.chunk_number,
-                 (SELECT  (SELECT SUM(json_extract(value, '$') * json_extract(?, '$[' || key || ']'))
-                            FROM json_each(fc.embedding)
-                            GROUP BY key IS NOT NULL)
-                  ) as similarity
+                 (SELECT SUM(json_extract(value, '$') * json_extract(?, '$[' || key || ']'))
+                  FROM json_each(fc.embedding)
+                 ) / ${queryEmbedding.length} as similarity
           FROM file_chunk fc
           JOIN file f ON fc.file_id = f.id
           JOIN branch_file_association bfa ON f.id = bfa.file_id
@@ -293,7 +294,7 @@ export async function queryRepo(
           ORDER BY similarity DESC
           LIMIT ?
         `,
-          [queryEmbeddingStr, branchData.branchId, effectiveLimit]
+          [queryEmbeddingStr, branchData.branchId, initialLimit]
         );
 
         console.error(
@@ -329,6 +330,14 @@ export async function queryRepo(
       );
     }
 
+    // Apply final limit to ensure we don't return too many results
+    if (filteredResults.length > effectiveLimit) {
+      console.error(
+        `[queryRepo] Limiting results from ${filteredResults.length} to ${effectiveLimit}`
+      );
+      filteredResults = filteredResults.slice(0, effectiveLimit);
+    }
+
     // Update progress to completion
     await heartbeatNotifier.sendProgress(1, 1);
 
@@ -341,6 +350,7 @@ export async function queryRepo(
         repoUrl,
         branch: branchData.actualBranch,
         processingTimeMs: totalTime,
+        resultsCount: filteredResults.length,
         results: filteredResults.map((result: any) => ({
           filePath: result.path,
           chunkNumber: result.chunk_number,

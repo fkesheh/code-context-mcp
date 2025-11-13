@@ -170,7 +170,7 @@ export async function ingestBranch(
       try {
         // Get the default branch name
         const defaultBranch = await git.revparse(['--abbrev-ref', 'HEAD']);
-        actualBranch = defaultBranch;
+        actualBranch = defaultBranch.trim();
         console.error(`[ingestBranch] Using default branch: ${actualBranch}`);
       } catch (error) {
         console.error(`[ingestBranch] Error getting default branch:`, error);
@@ -180,9 +180,40 @@ export async function ingestBranch(
       }
     }
 
+    // Fetch latest changes if this is a cached repository
+    if (!repoConfigManager.needsCloning(repoUrl)) {
+      try {
+        console.error(`[ingestBranch] Fetching latest changes for branch: ${actualBranch}`);
+        await git.fetch(['origin', actualBranch]);
+        console.error(`[ingestBranch] Fetch completed successfully`);
+      } catch (error) {
+        console.error(`[ingestBranch] Warning: Failed to fetch latest changes:`, error);
+        // Continue anyway - we'll use what we have locally
+      }
+    }
+
     // Checkout the branch
     console.error(`[ingestBranch] Checking out branch: ${actualBranch}`);
-    await git.checkout(actualBranch);
+    try {
+      await git.checkout(actualBranch);
+    } catch (error) {
+      console.error(`[ingestBranch] Error checking out branch ${actualBranch}:`, error);
+      // Try to checkout from origin
+      try {
+        console.error(`[ingestBranch] Trying to checkout from origin/${actualBranch}`);
+        await git.checkout(['-b', actualBranch, `origin/${actualBranch}`]);
+      } catch (fallbackError) {
+        console.error(`[ingestBranch] Failed to checkout branch:`, fallbackError);
+        return {
+          error: {
+            message: `Failed to checkout branch ${actualBranch}: ${
+              fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+            }`,
+          },
+        };
+      }
+    }
+
     const latestCommit = await git.revparse([actualBranch]);
     console.error(`[ingestBranch] Latest commit SHA: ${latestCommit}`);
 
