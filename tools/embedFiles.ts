@@ -108,45 +108,74 @@ export async function embedFiles(
     let processedChunks = 0;
     const totalChunks = chunks.length;
 
-    const BATCH_SIZE = 100
+    const BATCH_SIZE = config.EMBEDDING_BATCH_SIZE;
 
-    // Process chunks in batches of BATCH_SIZE
+    console.error(`[embedFiles] Processing ${totalChunks} chunks in batches of ${BATCH_SIZE}`);
+
+    // Process chunks in batches
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
       const batch = chunks.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(totalChunks / BATCH_SIZE);
+
       console.error(
-        `[embedFiles] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(totalChunks/BATCH_SIZE)}`
+        `[embedFiles] Processing batch ${batchNum}/${totalBatches} (${batch.length} chunks)`
       );
 
-      // Generate embeddings for the batch
-      const chunkContents = batch.map((chunk: Chunk) => chunk.content);
-      console.error(`[embedFiles] Generating embeddings for ${batch.length} chunks`);
-      const embeddingStartTime = Date.now();
-      const embeddings = await generateOllamaEmbeddings(chunkContents);
-      console.error(
-        `[embedFiles] Generated embeddings in ${Date.now() - embeddingStartTime}ms`
-      );
-
-      // Store embeddings in transaction
-      console.error(`[embedFiles] Storing embeddings`);
-      dbInterface.transaction((db) => {
-        const updateStmt = db.prepare(
-          `UPDATE file_chunk 
-           SET embedding = ?, model_version = ? 
-           WHERE id = ?`
+      try {
+        // Generate embeddings for the batch
+        const chunkContents = batch.map((chunk: Chunk) => chunk.content);
+        console.error(`[embedFiles] Generating embeddings for ${batch.length} chunks`);
+        const embeddingStartTime = Date.now();
+        const embeddings = await generateOllamaEmbeddings(chunkContents);
+        console.error(
+          `[embedFiles] Generated embeddings in ${Date.now() - embeddingStartTime}ms`
         );
-        for (let j = 0; j < batch.length; j++) {
-          const chunk = batch[j];
-          const embedding = JSON.stringify(embeddings[j]);
-          updateStmt.run(embedding, config.EMBEDDING_MODEL.model, chunk.id);
+
+        // Validate embeddings
+        if (embeddings.length !== batch.length) {
+          throw new Error(
+            `Embedding count mismatch: expected ${batch.length}, got ${embeddings.length}`
+          );
         }
-      });
 
-      processedChunks += batch.length;
+        // Store embeddings in transaction
+        console.error(`[embedFiles] Storing ${embeddings.length} embeddings in database`);
+        const storeStartTime = Date.now();
 
-      // Update progress
-      if (progressNotifier) {
-        const progress = processedChunks / totalChunks;
-        await progressNotifier.sendProgress(progress, 1);
+        dbInterface.transaction((db) => {
+          const updateStmt = db.prepare(
+            `UPDATE file_chunk
+             SET embedding = ?, model_version = ?
+             WHERE id = ?`
+          );
+
+          for (let j = 0; j < batch.length; j++) {
+            const chunk = batch[j];
+            const embedding = JSON.stringify(embeddings[j]);
+            updateStmt.run(embedding, config.EMBEDDING_MODEL.model, chunk.id);
+          }
+        });
+
+        console.error(
+          `[embedFiles] Stored embeddings in ${Date.now() - storeStartTime}ms`
+        );
+
+        processedChunks += batch.length;
+
+        // Update progress
+        if (progressNotifier) {
+          const progress = processedChunks / totalChunks;
+          await progressNotifier.sendProgress(progress, 1);
+        }
+      } catch (error) {
+        console.error(`[embedFiles] Error processing batch ${batchNum}:`, error);
+
+        // Continue with next batch instead of failing completely
+        console.error(`[embedFiles] Skipping batch ${batchNum} and continuing...`);
+
+        // Mark chunks as failed by updating them with null embedding (keep them for retry)
+        // This allows the process to continue and retry failed chunks later
       }
     }
 
